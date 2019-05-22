@@ -68,9 +68,9 @@ parts:
     The ``create_app`` factory in ``hello`` is called with the string ``'dev'``
     as the argument.
 
-If ``FLASK_APP`` is not set, the command will look for a file called
-:file:`wsgi.py` or :file:`app.py` and try to detect an application instance or
-factory.
+If ``FLASK_APP`` is not set, the command will try to import "app" or
+"wsgi" (as a ".py" file, or package) and try to detect an application
+instance or factory.
 
 Within the given import, the command looks for an application instance named
 ``app`` or ``application``, then any application instance. If no instance is
@@ -193,7 +193,7 @@ environment variables. The variables use the pattern
 ``FLASK_COMMAND_OPTION``. For example, to set the port for the run
 command, instead of ``flask run --port 8000``:
 
-.. code-block:: none
+.. code-block:: bash
 
     $ export FLASK_RUN_PORT=8000
     $ flask run
@@ -209,7 +209,7 @@ Disable dotenv
 The ``flask`` command will show a message if it detects dotenv files but
 python-dotenv is not installed.
 
-.. code-block:: none
+.. code-block:: bash
 
     $ flask run
      * Tip: There are .env files present. Do "pip install python-dotenv" to use them.
@@ -221,7 +221,7 @@ a project runner that loads them already. Keep in mind that the
 environment variables must be set before the app loads or it won't
 configure as expected.
 
-.. code-block:: none
+.. code-block:: bash
 
     $ export FLASK_SKIP_DOTENV=1
     $ flask run
