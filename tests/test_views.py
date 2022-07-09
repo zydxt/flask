@@ -1,18 +1,6 @@
-# -*- coding: utf-8 -*-
-"""
-    tests.views
-    ~~~~~~~~~~~
-
-    Pluggable views.
-
-    :copyright: © 2010 by the Pallets team.
-    :license: BSD, see LICENSE for more details.
-"""
-
 import pytest
 from werkzeug.http import parse_set_header
 
-import flask
 import flask.views
 
 
@@ -252,3 +240,21 @@ def test_remove_method_from_parent(app, client):
     assert client.get("/").data == b"GET"
     assert client.post("/").status_code == 405
     assert sorted(View.methods) == ["GET"]
+
+
+def test_init_once(app, client):
+    n = 0
+
+    class CountInit(flask.views.View):
+        init_every_request = False
+
+        def __init__(self):
+            nonlocal n
+            n += 1
+
+        def dispatch_request(self):
+            return str(n)
+
+    app.add_url_rule("/", view_func=CountInit.as_view("index"))
+    assert client.get("/").data == b"1"
+    assert client.get("/").data == b"1"

@@ -1,5 +1,3 @@
-.. _api:
-
 API
 ===
 
@@ -29,42 +27,9 @@ Incoming Request Data
 ---------------------
 
 .. autoclass:: Request
-   :members:
-   :inherited-members:
-
-   .. attribute:: environ
-
-      The underlying WSGI environment.
-
-   .. attribute:: path
-   .. attribute:: full_path
-   .. attribute:: script_root
-   .. attribute:: url
-   .. attribute:: base_url
-   .. attribute:: url_root
-
-      Provides different ways to look at the current `IRI
-      <https://tools.ietf.org/html/rfc3987>`_.  Imagine your application is
-      listening on the following application root::
-
-          http://www.example.com/myapplication
-
-      And a user requests the following URI::
-
-          http://www.example.com/myapplication/%CF%80/page.html?x=y
-
-      In this case the values of the above mentioned attributes would be
-      the following:
-
-      ============= ======================================================
-      `path`        ``u'/π/page.html'``
-      `full_path`   ``u'/π/page.html?x=y'``
-      `script_root` ``u'/myapplication'``
-      `base_url`    ``u'http://www.example.com/myapplication/π/page.html'``
-      `url`         ``u'http://www.example.com/myapplication/π/page.html?x=y'``
-      `url_root`    ``u'http://www.example.com/myapplication/'``
-      ============= ======================================================
-
+    :members:
+    :inherited-members:
+    :exclude-members: json_module
 
 .. attribute:: request
 
@@ -76,29 +41,16 @@ Incoming Request Data
 
    This is a proxy.  See :ref:`notes-on-proxies` for more information.
 
-   The request object is an instance of a :class:`~werkzeug.wrappers.Request`
-   subclass and provides all of the attributes Werkzeug defines.  This
-   just shows a quick overview of the most important ones.
+   The request object is an instance of a :class:`~flask.Request`.
 
 
 Response Objects
 ----------------
 
 .. autoclass:: flask.Response
-   :members: set_cookie, max_cookie_size, data, mimetype, is_json, get_json
-
-   .. attribute:: headers
-
-      A :class:`~werkzeug.datastructures.Headers` object representing the response headers.
-
-   .. attribute:: status
-
-      A string with a response status.
-
-   .. attribute:: status_code
-
-      The response status as integer.
-
+    :members:
+    :inherited-members:
+    :exclude-members: json_module
 
 Sessions
 --------
@@ -216,9 +168,9 @@ thing, like it does for :class:`request` and :class:`session`.
     :attr:`Flask.app_ctx_globals_class`, which defaults to
     :class:`ctx._AppCtxGlobals`.
 
-    This is a good place to store resources during a request. During
-    testing, you can use the :ref:`faking-resources` pattern to
-    pre-configure such resources.
+    This is a good place to store resources during a request. For
+    example, a ``before_request`` function could load a user object from
+    a session id, then set ``g.user`` to be used in the view function.
 
     This is a proxy. See :ref:`notes-on-proxies` for more information.
 
@@ -266,8 +218,6 @@ Useful Functions and Classes
 
 .. autofunction:: send_from_directory
 
-.. autofunction:: safe_join
-
 .. autofunction:: escape
 
 .. autoclass:: Markup
@@ -280,57 +230,34 @@ Message Flashing
 
 .. autofunction:: get_flashed_messages
 
+
 JSON Support
 ------------
 
 .. module:: flask.json
 
-Flask uses ``simplejson`` for the JSON implementation.  Since simplejson
-is provided by both the standard library as well as extension, Flask will
-try simplejson first and then fall back to the stdlib json module.  On top
-of that it will delegate access to the current application's JSON encoders
-and decoders for easier customization.
+Flask uses the built-in :mod:`json` module for handling JSON. It will
+use the current blueprint's or application's JSON encoder and decoder
+for easier customization. By default it handles some extra data types:
 
-So for starters instead of doing::
+-   :class:`datetime.datetime` and :class:`datetime.date` are serialized
+    to :rfc:`822` strings. This is the same as the HTTP date format.
+-   :class:`uuid.UUID` is serialized to a string.
+-   :class:`dataclasses.dataclass` is passed to
+    :func:`dataclasses.asdict`.
+-   :class:`~markupsafe.Markup` (or any object with a ``__html__``
+    method) will call the ``__html__`` method to get a string.
 
-    try:
-        import simplejson as json
-    except ImportError:
-        import json
-
-You can instead just do this::
-
-    from flask import json
-
-For usage examples, read the :mod:`json` documentation in the standard
-library.  The following extensions are by default applied to the stdlib's
-JSON module:
-
-1.  ``datetime`` objects are serialized as :rfc:`822` strings.
-2.  Any object with an ``__html__`` method (like :class:`~flask.Markup`)
-    will have that method called and then the return value is serialized
-    as string.
-
-The :func:`~htmlsafe_dumps` function of this json module is also available
-as a filter called ``|tojson`` in Jinja2.  Note that in versions of Flask prior
-to Flask 0.10, you must disable escaping with ``|safe`` if you intend to use
-``|tojson`` output inside ``script`` tags. In Flask 0.10 and above, this
-happens automatically (but it's harmless to include ``|safe`` anyway).
+Jinja's ``|tojson`` filter is configured to use Flask's :func:`dumps`
+function. The filter marks the output with ``|safe`` automatically. Use
+the filter to render data inside ``<script>`` tags.
 
 .. sourcecode:: html+jinja
 
-    <script type=text/javascript>
-        doSomethingWith({{ user.username|tojson|safe }});
+    <script>
+        const names = {{ names|tosjon }};
+        renderChart(names, {{ axis_data|tojson }});
     </script>
-
-.. admonition:: Auto-Sort JSON Keys
-
-    The configuration variable ``JSON_SORT_KEYS`` (:ref:`config`) can be
-    set to false to stop Flask from auto-sorting keys.  By default sorting
-    is enabled and outside of the app context sorting is turned on.
-
-    Notice that disabling key sorting can cause issues when using content
-    based HTTP caches and Python's hash randomization feature.
 
 .. autofunction:: jsonify
 
@@ -350,6 +277,7 @@ happens automatically (but it's harmless to include ``|safe`` anyway).
 
 .. automodule:: flask.json.tag
 
+
 Template Rendering
 ------------------
 
@@ -358,6 +286,10 @@ Template Rendering
 .. autofunction:: render_template
 
 .. autofunction:: render_template_string
+
+.. autofunction:: stream_template
+
+.. autofunction:: stream_template_string
 
 .. autofunction:: get_template_attribute
 
@@ -379,56 +311,28 @@ Useful Internals
 .. autoclass:: flask.ctx.RequestContext
    :members:
 
-.. data:: _request_ctx_stack
+.. data:: flask.globals.request_ctx
 
-    The internal :class:`~werkzeug.local.LocalStack` that holds
-    :class:`~flask.ctx.RequestContext` instances. Typically, the
-    :data:`request` and :data:`session` proxies should be accessed
-    instead of the stack. It may be useful to access the stack in
-    extension code.
+    The current :class:`~flask.ctx.RequestContext`. If a request context
+    is not active, accessing attributes on this proxy will raise a
+    ``RuntimeError``.
 
-    The following attributes are always present on each layer of the
-    stack:
-
-    `app`
-      the active Flask application.
-
-    `url_adapter`
-      the URL adapter that was used to match the request.
-
-    `request`
-      the current request object.
-
-    `session`
-      the active session object.
-
-    `g`
-      an object with all the attributes of the :data:`flask.g` object.
-
-    `flashes`
-      an internal cache for the flashed messages.
-
-    Example usage::
-
-        from flask import _request_ctx_stack
-
-        def get_session():
-            ctx = _request_ctx_stack.top
-            if ctx is not None:
-                return ctx.session
+    This is an internal object that is essential to how Flask handles
+    requests. Accessing this should not be needed in most cases. Most
+    likely you want :data:`request` and :data:`session` instead.
 
 .. autoclass:: flask.ctx.AppContext
    :members:
 
-.. data:: _app_ctx_stack
+.. data:: flask.globals.app_ctx
 
-    The internal :class:`~werkzeug.local.LocalStack` that holds
-    :class:`~flask.ctx.AppContext` instances. Typically, the
-    :data:`current_app` and :data:`g` proxies should be accessed instead
-    of the stack. Extensions can access the contexts on the stack as a
-    namespace to store data.
+    The current :class:`~flask.ctx.AppContext`. If an app context is not
+    active, accessing attributes on this proxy will raise a
+    ``RuntimeError``.
 
-    .. versionadded:: 0.9
+    This is an internal object that is essential to how Flask handles
+    requests. Accessing this should not be needed in most cases. Most
+    likely you want :data:`current_app` and :data:`g` instead.
 
 .. autoclass:: flask.blueprints.BlueprintSetupState
    :members:
@@ -511,18 +415,32 @@ The following signals exist in Flask:
 
 .. data:: got_request_exception
 
-   This signal is sent when an exception happens during request processing.
-   It is sent *before* the standard exception handling kicks in and even
-   in debug mode, where no exception handling happens.  The exception
-   itself is passed to the subscriber as `exception`.
+    This signal is sent when an unhandled exception happens during
+    request processing, including when debugging. The exception is
+    passed to the subscriber as ``exception``.
 
-   Example subscriber::
+    This signal is not sent for
+    :exc:`~werkzeug.exceptions.HTTPException`, or other exceptions that
+    have error handlers registered, unless the exception was raised from
+    an error handler.
 
-        def log_exception(sender, exception, **extra):
-            sender.logger.debug('Got exception during processing: %s', exception)
+    This example shows how to do some extra logging if a theoretical
+    ``SecurityException`` was raised:
+
+    .. code-block:: python
 
         from flask import got_request_exception
-        got_request_exception.connect(log_exception, app)
+
+        def log_security_exception(sender, exception, **extra):
+            if not isinstance(exception, SecurityException):
+                return
+
+            security_logger.exception(
+                f"SecurityException at {request.url!r}",
+                exc_info=exception,
+            )
+
+        got_request_exception.connect(log_security_exception, app)
 
 .. data:: request_tearing_down
 
@@ -633,7 +551,6 @@ The following signals exist in Flask:
 
 .. _blinker: https://pypi.org/project/blinker/
 
-.. _class-based-views:
 
 Class-Based Views
 -----------------
@@ -760,7 +677,6 @@ instead of the `view_func` parameter.
                 handling.  They have to be specified as keyword arguments.
 =============== ==========================================================
 
-.. _view-func-options:
 
 View Function Options
 ---------------------

@@ -1,4 +1,10 @@
-from flask import Blueprint, flash, g, redirect, render_template, request, url_for
+from flask import Blueprint
+from flask import flash
+from flask import g
+from flask import redirect
+from flask import render_template
+from flask import request
+from flask import url_for
 from werkzeug.exceptions import abort
 
 from flaskr.auth import login_required
@@ -43,7 +49,7 @@ def get_post(id, check_author=True):
     )
 
     if post is None:
-        abort(404, "Post id {0} doesn't exist.".format(id))
+        abort(404, f"Post id {id} doesn't exist.")
 
     if check_author and post["author_id"] != g.user["id"]:
         abort(403)
@@ -68,7 +74,7 @@ def create():
         else:
             db = get_db()
             db.execute(
-                "INSERT INTO post (title, body, author_id)" " VALUES (?, ?, ?)",
+                "INSERT INTO post (title, body, author_id) VALUES (?, ?, ?)",
                 (title, body, g.user["id"]),
             )
             db.commit()

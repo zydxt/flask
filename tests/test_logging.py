@@ -1,19 +1,12 @@
-# -*- coding: utf-8 -*-
-"""
-tests.test_logging
-~~~~~~~~~~~~~~~~~~~
-
-:copyright: © 2010 by the Pallets team.
-:license: BSD, see LICENSE for more details.
-"""
-
 import logging
 import sys
+from io import StringIO
 
 import pytest
 
-from flask._compat import StringIO
-from flask.logging import default_handler, has_level_handler, wsgi_errors_stream
+from flask.logging import default_handler
+from flask.logging import has_level_handler
+from flask.logging import wsgi_errors_stream
 
 
 @pytest.fixture(autouse=True)
@@ -22,7 +15,7 @@ def reset_logging(pytestconfig):
     logging.root.handlers = []
     root_level = logging.root.level
 
-    logger = logging.getLogger("flask.app")
+    logger = logging.getLogger("flask_test")
     logger.handlers = []
     logger.setLevel(logging.NOTSET)
 
@@ -41,7 +34,7 @@ def reset_logging(pytestconfig):
 
 
 def test_logger(app):
-    assert app.logger.name == "flask.app"
+    assert app.logger.name == "flask_test"
     assert app.logger.level == logging.NOTSET
     assert app.logger.handlers == [default_handler]
 

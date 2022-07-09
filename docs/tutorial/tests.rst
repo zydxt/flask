@@ -107,7 +107,7 @@ local development configuration.
         return app.test_cli_runner()
 
 :func:`tempfile.mkstemp` creates and opens a temporary file, returning
-the file object and the path to it. The ``DATABASE`` path is
+the file descriptor and the path to it. The ``DATABASE`` path is
 overridden so it points to this temporary path instead of the instance
 folder. After setting the path, the database tables are created and the
 test data is inserted. After the test is over, the temporary file is
@@ -188,7 +188,7 @@ should be closed.
         with pytest.raises(sqlite3.ProgrammingError) as e:
             db.execute('SELECT 1')
 
-        assert 'closed' in str(e)
+        assert 'closed' in str(e.value)
 
 The ``init-db`` command should call the ``init_db`` function and output
 a message.
@@ -266,11 +266,11 @@ messages.
         response = client.post(
             '/auth/register', data={'username': 'a', 'password': 'a'}
         )
-        assert 'http://localhost/auth/login' == response.headers['Location']
+        assert response.headers["Location"] == "/auth/login"
 
         with app.app_context():
             assert get_db().execute(
-                "select * from user where username = 'a'",
+                "SELECT * FROM user WHERE username = 'a'",
             ).fetchone() is not None
 
 
@@ -301,8 +301,8 @@ URL when the register view redirects to the login view.
 
 :attr:`~Response.data` contains the body of the response as bytes. If
 you expect a certain value to render on the page, check that it's in
-``data``. Bytes must be compared to bytes. If you want to compare
-Unicode text, use :meth:`get_data(as_text=True) <werkzeug.wrappers.BaseResponse.get_data>`
+``data``. Bytes must be compared to bytes. If you want to compare text,
+use :meth:`get_data(as_text=True) <werkzeug.wrappers.Response.get_data>`
 instead.
 
 ``pytest.mark.parametrize`` tells Pytest to run the same test function
@@ -319,7 +319,7 @@ The tests for the ``login`` view are very similar to those for
     def test_login(client, auth):
         assert client.get('/auth/login').status_code == 200
         response = auth.login()
-        assert response.headers['Location'] == 'http://localhost/'
+        assert response.headers["Location"] == "/"
 
         with client:
             client.get('/')
@@ -404,7 +404,7 @@ is returned. If a ``post`` with the given ``id`` doesn't exist,
     ))
     def test_login_required(client, path):
         response = client.post(path)
-        assert response.headers['Location'] == 'http://localhost/auth/login'
+        assert response.headers["Location"] == "/auth/login"
 
 
     def test_author_required(app, client, auth):
@@ -479,7 +479,7 @@ no longer exist in the database.
     def test_delete(client, auth, app):
         auth.login()
         response = client.post('/1/delete')
-        assert response.headers['Location'] == 'http://localhost/'
+        assert response.headers["Location"] == "/"
 
         with app.app_context():
             db = get_db()

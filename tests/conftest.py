@@ -1,13 +1,3 @@
-# -*- coding: utf-8 -*-
-"""
-    tests.conftest
-    ~~~~~~~~~~~~~~
-
-    :copyright: © 2010 by the Pallets team.
-    :license: BSD, see LICENSE for more details.
-"""
-
-import gc
 import os
 import pkgutil
 import sys
@@ -16,8 +6,8 @@ import textwrap
 import pytest
 from _pytest import monkeypatch
 
-import flask
-from flask import Flask as _Flask
+from flask import Flask
+from flask.globals import request_ctx
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -28,6 +18,7 @@ def _standard_os_environ():
     """
     mp = monkeypatch.MonkeyPatch()
     out = (
+        (os.environ, "FLASK_ENV_FILE", monkeypatch.notset),
         (os.environ, "FLASK_APP", monkeypatch.notset),
         (os.environ, "FLASK_ENV", monkeypatch.notset),
         (os.environ, "FLASK_DEBUG", monkeypatch.notset),
@@ -53,14 +44,13 @@ def _reset_os_environ(monkeypatch, _standard_os_environ):
     monkeypatch._setitem.extend(_standard_os_environ)
 
 
-class Flask(_Flask):
-    testing = True
-    secret_key = "test key"
-
-
 @pytest.fixture
 def app():
     app = Flask("flask_test", root_path=os.path.dirname(__file__))
+    app.config.update(
+        TESTING=True,
+        SECRET_KEY="test key",
+    )
     return app
 
 
@@ -83,9 +73,15 @@ def client(app):
 
 @pytest.fixture
 def test_apps(monkeypatch):
-    monkeypatch.syspath_prepend(
-        os.path.abspath(os.path.join(os.path.dirname(__file__), "test_apps"))
-    )
+    monkeypatch.syspath_prepend(os.path.join(os.path.dirname(__file__), "test_apps"))
+    original_modules = set(sys.modules.keys())
+
+    yield
+
+    # Remove any imports cached during the test. Otherwise "import app"
+    # will work in the next test even though it's no longer on the path.
+    for key in sys.modules.keys() - original_modules:
+        sys.modules.pop(key)
 
 
 @pytest.fixture(autouse=True)
@@ -95,8 +91,10 @@ def leak_detector():
     # make sure we're not leaking a request context since we are
     # testing flask internally in debug mode in a few cases
     leaks = []
-    while flask._request_ctx_stack.top is not None:
-        leaks.append(flask._request_ctx_stack.pop())
+    while request_ctx:
+        leaks.append(request_ctx._get_current_object())
+        request_ctx.pop()
+
     assert leaks == []
 
 
@@ -114,14 +112,13 @@ def limit_loader(request, monkeypatch):
     if not request.param:
         return
 
-    class LimitedLoader(object):
+    class LimitedLoader:
         def __init__(self, loader):
             self.loader = loader
 
         def __getattr__(self, name):
-            if name in ("archive", "get_filename"):
-                msg = "Mocking a loader which does not have `%s.`" % name
-                raise AttributeError(msg)
+            if name in {"archive", "get_filename"}:
+                raise AttributeError(f"Mocking a loader which does not have {name!r}.")
             return getattr(self.loader, name)
 
     old_get_loader = pkgutil.get_loader
@@ -151,7 +148,7 @@ def site_packages(modules_tmpdir, monkeypatch):
     """Create a fake site-packages."""
     rv = (
         modules_tmpdir.mkdir("lib")
-        .mkdir("python{x[0]}.{x[1]}".format(x=sys.version_info))
+        .mkdir(f"python{sys.version_info.major}.{sys.version_info.minor}")
         .mkdir("site-packages")
     )
     monkeypatch.syspath_prepend(str(rv))
@@ -164,23 +161,21 @@ def install_egg(modules_tmpdir, monkeypatch):
     sys.path."""
 
     def inner(name, base=modules_tmpdir):
-        if not isinstance(name, str):
-            raise ValueError(name)
         base.join(name).ensure_dir()
         base.join(name).join("__init__.py").ensure()
 
         egg_setup = base.join("setup.py")
         egg_setup.write(
             textwrap.dedent(
-                """
-        from setuptools import setup
-        setup(name='{0}',
-              version='1.0',
-              packages=['site_egg'],
-              zip_safe=True)
-        """.format(
-                    name
+                f"""
+                from setuptools import setup
+                setup(
+                    name="{name}",
+                    version="1.0",
+                    packages=["site_egg"],
+                    zip_safe=True,
                 )
+                """
             )
         )
 
@@ -189,7 +184,7 @@ def install_egg(modules_tmpdir, monkeypatch):
         subprocess.check_call(
             [sys.executable, "setup.py", "bdist_egg"], cwd=str(modules_tmpdir)
         )
-        egg_path, = modules_tmpdir.join("dist/").listdir()
+        (egg_path,) = modules_tmpdir.join("dist/").listdir()
         monkeypatch.syspath_prepend(str(egg_path))
         return egg_path
 
@@ -202,10 +197,3 @@ def purge_module(request):
         request.addfinalizer(lambda: sys.modules.pop(name, None))
 
     return inner
-
-
-@pytest.fixture(autouse=True)
-def catch_deprecation_warnings(recwarn):
-    yield
-    gc.collect()
-    assert not recwarn.list, "\n".join(str(w.message) for w in recwarn.list)

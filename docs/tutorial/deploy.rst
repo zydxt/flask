@@ -32,8 +32,8 @@ distribution file.
     $ python setup.py bdist_wheel
 
 You can find the file in ``dist/flaskr-1.0.0-py3-none-any.whl``. The
-file name is the name of the project, the version, and some tags about
-the file can install.
+file name is in the format of {project name}-{version}-{python tag}
+-{abi tag}-{platform tag}.
 
 Copy this file to another machine,
 :ref:`set up a new virtualenv <install-create-env>`, then install the
@@ -48,10 +48,9 @@ Pip will install your project along with its dependencies.
 Since this is a different machine, you need to run ``init-db`` again to
 create the database in the instance folder.
 
-.. code-block:: none
+    .. code-block:: text
 
-    $ export FLASK_APP=flaskr
-    $ flask init-db
+        $ flask --app flaskr init-db
 
 When Flask detects that it's installed (not in editable mode), it uses
 a different directory for the instance folder. You can find it at
@@ -70,9 +69,9 @@ You can use the following command to output a random secret key:
 
 .. code-block:: none
 
-    $ python -c 'import os; print(os.urandom(16))'
+    $ python -c 'import secrets; print(secrets.token_hex())'
 
-    b'_5#y2L"F4Q8z\n\xec]/'
+    '192b9bdd22ab9ed4d12e236c78afcb9a393ec15f71bbf5dc987d54727823bcbf'
 
 Create the ``config.py`` file in the instance folder, which the factory
 will read from if it exists. Copy the generated value into it.
@@ -80,7 +79,7 @@ will read from if it exists. Copy the generated value into it.
 .. code-block:: python
     :caption: ``venv/var/flaskr-instance/config.py``
 
-    SECRET_KEY = b'_5#y2L"F4Q8z\n\xec]/'
+    SECRET_KEY = '192b9bdd22ab9ed4d12e236c78afcb9a393ec15f71bbf5dc987d54727823bcbf'
 
 You can also set any other necessary configuration here, although
 ``SECRET_KEY`` is the only one needed for Flaskr.
@@ -102,7 +101,7 @@ first install it in the virtual environment:
     $ pip install waitress
 
 You need to tell Waitress about your application, but it doesn't use
-``FLASK_APP`` like ``flask run`` does. You need to tell it to import and
+``--app`` like ``flask run`` does. You need to tell it to import and
 call the application factory to get an application object.
 
 .. code-block:: none
@@ -116,6 +115,6 @@ your application. Waitress is just an example, chosen for the tutorial
 because it supports both Windows and Linux. There are many more WSGI
 servers and deployment options that you may choose for your project.
 
-.. _Waitress: https://docs.pylonsproject.org/projects/waitress/
+.. _Waitress: https://docs.pylonsproject.org/projects/waitress/en/stable/
 
 Continue to :doc:`next`.

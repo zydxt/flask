@@ -67,10 +67,12 @@ This tells Python to copy everything in the ``static`` and ``templates``
 directories, and the ``schema.sql`` file, but to exclude all bytecode
 files.
 
-See the `official packaging guide`_ for another explanation of the files
+See the official `Packaging tutorial <packaging tutorial_>`_ and
+`detailed guide <packaging guide_>`_ for more explanation of the files
 and options used.
 
-.. _official packaging guide: https://packaging.python.org/tutorials/distributing-packages/
+.. _packaging tutorial: https://packaging.python.org/tutorials/packaging-projects/
+.. _packaging guide: https://packaging.python.org/guides/distributing-packages-using-setuptools/
 
 
 Install the Project
@@ -107,7 +109,7 @@ You can observe that the project is now installed with ``pip list``.
     wheel          0.30.0
 
 Nothing changes from how you've been running your project so far.
-``FLASK_APP`` is still set to ``flaskr`` and ``flask run`` still runs
+``--app`` is still set to ``flaskr`` and ``flask run`` still runs
 the application, but you can call it from anywhere, not just the
 ``flask-tutorial`` directory.
 

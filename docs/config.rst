@@ -1,5 +1,3 @@
-.. _config:
-
 Configuration Handling
 ======================
 
@@ -40,7 +38,7 @@ method::
 
     app.config.update(
         TESTING=True,
-        SECRET_KEY=b'_5#y2L"F4Q8z\n\xec]/'
+        SECRET_KEY='192b9bdd22ab9ed4d12e236c78afcb9a393ec15f71bbf5dc987d54727823bcbf'
     )
 
 
@@ -49,36 +47,33 @@ Environment and Debug Features
 
 The :data:`ENV` and :data:`DEBUG` config values are special because they
 may behave inconsistently if changed after the app has begun setting up.
-In order to set the environment and debug mode reliably, Flask uses
-environment variables.
+In order to set the environment and debug mode reliably, pass options to
+the ``flask`` command or use environment variables.
 
-The environment is used to indicate to Flask, extensions, and other
-programs, like Sentry, what context Flask is running in. It is
-controlled with the :envvar:`FLASK_ENV` environment variable and
-defaults to ``production``.
+The execution environment is used to indicate to Flask, extensions, and
+other programs, like Sentry, what context Flask is running in. It is
+controlled with the ``FLASK_ENV`` environment variable, or the
+``--env`` option when using the ``flask`` command, and defaults to
+``production``.
 
-Setting :envvar:`FLASK_ENV` to ``development`` will enable debug mode.
-``flask run`` will use the interactive debugger and reloader by default
-in debug mode. To control this separately from the environment, use the
-:envvar:`FLASK_DEBUG` flag.
-
-.. versionchanged:: 1.0
-    Added :envvar:`FLASK_ENV` to control the environment separately
-    from debug mode. The development environment enables debug mode.
+Setting ``--env development`` will enable debug mode. ``flask run`` will
+use the interactive debugger and reloader by default in debug mode. To
+control this separately from the environment, use the
+``--debug/--no-debug`` option or the ``FLASK_DEBUG`` environment
+variable.
 
 To switch Flask to the development environment and enable debug mode,
-set :envvar:`FLASK_ENV`::
+set ``--env``:
 
-    $ export FLASK_ENV=development
-    $ flask run
+.. code-block:: text
 
-(On Windows, use ``set`` instead of ``export``.)
+    $ flask --app hello --env development run
 
-Using the environment variables as described above is recommended. While
-it is possible to set :data:`ENV` and :data:`DEBUG` in your config or
-code, this is strongly discouraged. They can't be read early by the
-``flask`` command, and some systems or extensions may have already
-configured themselves based on a previous value.
+Using the options or environment variables as described above is
+recommended. While it is possible to set :data:`ENV` and :data:`DEBUG`
+in your config or code, this is strongly discouraged. They can't be read
+early by the ``flask`` command, and some systems or extensions may have
+already configured themselves based on a previous value.
 
 
 Builtin Configuration Values
@@ -131,14 +126,6 @@ The following configuration values are used internally by Flask:
 
     Default: ``None``
 
-.. py:data:: PRESERVE_CONTEXT_ON_EXCEPTION
-
-    Don't pop the request context when an exception occurs. If not set, this
-    is true if ``DEBUG`` is true. This allows debuggers to introspect the
-    request data on errors, and should normally not need to be set directly.
-
-    Default: ``None``
-
 .. py:data:: TRAP_HTTP_EXCEPTIONS
 
     If there is no handler for an ``HTTPException``-type exception, re-raise it
@@ -161,11 +148,11 @@ The following configuration values are used internally by Flask:
 
     A secret key that will be used for securely signing the session cookie
     and can be used for any other security related needs by extensions or your
-    application. It should be a long random string of bytes, although unicode
-    is accepted too. For example, copy the output of this to your config::
+    application. It should be a long random ``bytes`` or ``str``. For
+    example, copy the output of this to your config::
 
-        $ python -c 'import os; print(os.urandom(16))'
-        b'_5#y2L"F4Q8z\n\xec]/'
+        $ python -c 'import secrets; print(secrets.token_hex())'
+        '192b9bdd22ab9ed4d12e236c78afcb9a393ec15f71bbf5dc987d54727823bcbf'
 
     **Do not reveal the secret key when posting questions or committing code.**
 
@@ -249,11 +236,16 @@ The following configuration values are used internally by Flask:
 .. py:data:: SEND_FILE_MAX_AGE_DEFAULT
 
     When serving files, set the cache control max age to this number of
-    seconds.  Can either be a :class:`datetime.timedelta` or an ``int``.
+    seconds. Can be a :class:`datetime.timedelta` or an ``int``.
     Override this value on a per-file basis using
-    :meth:`~flask.Flask.get_send_file_max_age` on the application or blueprint.
+    :meth:`~flask.Flask.get_send_file_max_age` on the application or
+    blueprint.
 
-    Default: ``timedelta(hours=12)`` (``43200`` seconds)
+    If ``None``, ``send_file`` tells the browser to use conditional
+    requests will be used instead of a timed cache, which is usually
+    preferable.
+
+    Default: ``None``
 
 .. py:data:: SERVER_NAME
 
@@ -276,7 +268,10 @@ The following configuration values are used internally by Flask:
 .. py:data:: APPLICATION_ROOT
 
     Inform the application what path it is mounted under by the application /
-    web server.
+    web server.  This is used for generating URLs outside the context of a
+    request (inside a request, the dispatcher is responsible for setting
+    ``SCRIPT_NAME`` instead; see :doc:`/patterns/appdispatch`
+    for examples of dispatch configuration).
 
     Will be used for the session cookie path if ``SESSION_COOKIE_PATH`` is not
     set.
@@ -299,10 +294,10 @@ The following configuration values are used internally by Flask:
 
 .. py:data:: JSON_AS_ASCII
 
-    Serialize objects to ASCII-encoded JSON. If this is disabled, the JSON
-    will be returned as a Unicode string, or encoded as ``UTF-8`` by
-    ``jsonify``. This has security implications when rendering the JSON into
-    JavaScript in templates, and should typically remain enabled.
+    Serialize objects to ASCII-encoded JSON. If this is disabled, the
+    JSON returned from ``jsonify`` will contain Unicode characters. This
+    has security implications when rendering the JSON into JavaScript in
+    templates, and should typically remain enabled.
 
     Default: ``True``
 
@@ -379,7 +374,7 @@ The following configuration values are used internally by Flask:
 
 .. versionchanged:: 1.0
     ``LOGGER_NAME`` and ``LOGGER_HANDLER_POLICY`` were removed. See
-    :ref:`logging` for information about configuration.
+    :doc:`/logging` for information about configuration.
 
     Added :data:`ENV` to reflect the :envvar:`FLASK_ENV` environment
     variable.
@@ -389,14 +384,17 @@ The following configuration values are used internally by Flask:
 
     Added :data:`MAX_COOKIE_SIZE` to control a warning from Werkzeug.
 
+.. versionchanged:: 2.2
+    Removed ``PRESERVE_CONTEXT_ON_EXCEPTION``.
 
-Configuring from Files
-----------------------
+
+Configuring from Python Files
+-----------------------------
 
 Configuration becomes more useful if you can store it in a separate file,
 ideally located outside the actual application package. This makes
 packaging and distributing your application possible via various package
-handling tools (:ref:`distribute-deployment`) and finally modifying the
+handling tools (:doc:`/patterns/distribute`) and finally modifying the
 configuration file afterwards.
 
 So a common pattern is this::
@@ -408,18 +406,42 @@ So a common pattern is this::
 This first loads the configuration from the
 `yourapplication.default_settings` module and then overrides the values
 with the contents of the file the :envvar:`YOURAPPLICATION_SETTINGS`
-environment variable points to.  This environment variable can be set on
-Linux or OS X with the export command in the shell before starting the
-server::
+environment variable points to.  This environment variable can be set
+in the shell before starting the server:
 
-    $ export YOURAPPLICATION_SETTINGS=/path/to/settings.cfg
-    $ python run-app.py
-     * Running on http://127.0.0.1:5000/
-     * Restarting with reloader...
+.. tabs::
 
-On Windows systems use the `set` builtin instead::
+   .. group-tab:: Bash
 
-    > set YOURAPPLICATION_SETTINGS=\path\to\settings.cfg
+      .. code-block:: text
+
+         $ export YOURAPPLICATION_SETTINGS=/path/to/settings.cfg
+         $ flask run
+          * Running on http://127.0.0.1:5000/
+
+   .. group-tab:: Fish
+
+      .. code-block:: text
+
+         $ set -x YOURAPPLICATION_SETTINGS /path/to/settings.cfg
+         $ flask run
+          * Running on http://127.0.0.1:5000/
+
+   .. group-tab:: CMD
+
+      .. code-block:: text
+
+         > set YOURAPPLICATION_SETTINGS=\path\to\settings.cfg
+         > flask run
+          * Running on http://127.0.0.1:5000/
+
+   .. group-tab:: Powershell
+
+      .. code-block:: text
+
+         > $env:YOURAPPLICATION_SETTINGS = "\path\to\settings.cfg"
+         > flask run
+          * Running on http://127.0.0.1:5000/
 
 The configuration files themselves are actual Python files.  Only values
 in uppercase are actually stored in the config object later on.  So make
@@ -428,8 +450,7 @@ sure to use uppercase letters for your config keys.
 Here is an example of a configuration file::
 
     # Example configuration
-    DEBUG = False
-    SECRET_KEY = b'_5#y2L"F4Q8z\n\xec]/'
+    SECRET_KEY = '192b9bdd22ab9ed4d12e236c78afcb9a393ec15f71bbf5dc987d54727823bcbf'
 
 Make sure to load the configuration very early on, so that extensions have
 the ability to access the configuration when starting up.  There are other
@@ -438,50 +459,116 @@ complete reference, read the :class:`~flask.Config` object's
 documentation.
 
 
+Configuring from Data Files
+---------------------------
+
+It is also possible to load configuration from a file in a format of
+your choice using :meth:`~flask.Config.from_file`. For example to load
+from a TOML file:
+
+.. code-block:: python
+
+    import toml
+    app.config.from_file("config.toml", load=toml.load)
+
+Or from a JSON file:
+
+.. code-block:: python
+
+    import json
+    app.config.from_file("config.json", load=json.load)
+
+
 Configuring from Environment Variables
 --------------------------------------
 
-In addition to pointing to configuration files using environment variables, you
-may find it useful (or necessary) to control your configuration values directly
-from the environment.
+In addition to pointing to configuration files using environment
+variables, you may find it useful (or necessary) to control your
+configuration values directly from the environment. Flask can be
+instructed to load all environment variables starting with a specific
+prefix into the config using :meth:`~flask.Config.from_prefixed_env`.
 
-Environment variables can be set on Linux or OS X with the export command in
-the shell before starting the server::
+Environment variables can be set in the shell before starting the
+server:
 
-    $ export SECRET_KEY='5f352379324c22463451387a0aec5d2f'
-    $ export MAIL_ENABLED=false
-    $ python run-app.py
-     * Running on http://127.0.0.1:5000/
+.. tabs::
 
-On Windows systems use the ``set`` builtin instead::
+   .. group-tab:: Bash
 
-    > set SECRET_KEY='5f352379324c22463451387a0aec5d2f'
+      .. code-block:: text
 
-While this approach is straightforward to use, it is important to remember that
-environment variables are strings -- they are not automatically deserialized
-into Python types.
+         $ export FLASK_SECRET_KEY="5f352379324c22463451387a0aec5d2f"
+         $ export FLASK_MAIL_ENABLED=false
+         $ flask run
+          * Running on http://127.0.0.1:5000/
 
-Here is an example of a configuration file that uses environment variables::
+   .. group-tab:: Fish
 
-    import os
+      .. code-block:: text
 
-    _mail_enabled = os.environ.get("MAIL_ENABLED", default="true")
-    MAIL_ENABLED = _mail_enabled.lower() in {"1", "t", "true"}
+         $ set -x FLASK_SECRET_KEY "5f352379324c22463451387a0aec5d2f"
+         $ set -x FLASK_MAIL_ENABLED false
+         $ flask run
+          * Running on http://127.0.0.1:5000/
 
-    SECRET_KEY = os.environ.get("SECRET_KEY")
+   .. group-tab:: CMD
 
-    if not SECRET_KEY:
-        raise ValueError("No SECRET_KEY set for Flask application")
+      .. code-block:: text
 
+         > set FLASK_SECRET_KEY="5f352379324c22463451387a0aec5d2f"
+         > set FLASK_MAIL_ENABLED=false
+         > flask run
+          * Running on http://127.0.0.1:5000/
 
-Notice that any value besides an empty string will be interpreted as a boolean
-``True`` value in Python, which requires care if an environment explicitly sets
-values intended to be ``False``.
+   .. group-tab:: Powershell
 
-Make sure to load the configuration very early on, so that extensions have the
-ability to access the configuration when starting up.  There are other methods
-on the config object as well to load from individual files.  For a complete
-reference, read the :class:`~flask.Config` class documentation.
+      .. code-block:: text
+
+         > $env:FLASK_SECRET_KEY = "5f352379324c22463451387a0aec5d2f"
+         > $env:FLASK_MAIL_ENABLED = "false"
+         > flask run
+          * Running on http://127.0.0.1:5000/
+
+The variables can then be loaded and accessed via the config with a key
+equal to the environment variable name without the prefix i.e.
+
+.. code-block:: python
+
+    app.config.from_prefixed_env()
+    app.config["SECRET_KEY"]  # Is "5f352379324c22463451387a0aec5d2f"
+
+The prefix is ``FLASK_`` by default. This is configurable via the
+``prefix`` argument of :meth:`~flask.Config.from_prefixed_env`.
+
+Values will be parsed to attempt to convert them to a more specific type
+than strings. By default :func:`json.loads` is used, so any valid JSON
+value is possible, including lists and dicts. This is configurable via
+the ``loads`` argument of :meth:`~flask.Config.from_prefixed_env`.
+
+When adding a boolean value with the default JSON parsing, only "true"
+and "false", lowercase, are valid values. Keep in mind that any
+non-empty string is considered ``True`` by Python.
+
+It is possible to set keys in nested dictionaries by separating the
+keys with double underscore (``__``). Any intermediate keys that don't
+exist on the parent dict will be initialized to an empty dict.
+
+.. code-block:: text
+
+    $ export FLASK_MYAPI__credentials__username=user123
+
+.. code-block:: python
+
+    app.config["MYAPI"]["credentials"]["username"]  # Is "user123"
+
+On Windows, environment variable keys are always uppercase, therefore
+the above example would end up as ``MYAPI__CREDENTIALS__USERNAME``.
+
+For even more config loading features, including merging and
+case-insensitive Windows support, try a dedicated library such as
+Dynaconf_, which includes integration with Flask.
+
+.. _Dynaconf: https://www.dynaconf.com/
 
 
 Configuration Best Practices
@@ -500,6 +587,10 @@ that experience:
 2.  Do not write code that needs the configuration at import time.  If you
     limit yourself to request-only accesses to the configuration you can
     reconfigure the object later on as needed.
+
+3.  Make sure to load the configuration very early on, so that
+    extensions can access the configuration when calling ``init_app``.
+
 
 .. _config-dev-prod:
 
@@ -533,17 +624,16 @@ An interesting pattern is also to use classes and inheritance for
 configuration::
 
     class Config(object):
-        DEBUG = False
         TESTING = False
-        DATABASE_URI = 'sqlite:///:memory:'
 
     class ProductionConfig(Config):
         DATABASE_URI = 'mysql://user@localhost/foo'
 
     class DevelopmentConfig(Config):
-        DEBUG = True
+        DATABASE_URI = "sqlite:////tmp/foo.db"
 
     class TestingConfig(Config):
+        DATABASE_URI = 'sqlite:///:memory:'
         TESTING = True
 
 To enable such a config you just have to call into
@@ -568,13 +658,12 @@ your configuration classes::
 
     class Config(object):
         """Base config, uses staging database server."""
-        DEBUG = False
         TESTING = False
         DB_SERVER = '192.168.1.56'
 
         @property
-        def DATABASE_URI(self):         # Note: all caps
-            return 'mysql://user@{}/foo'.format(self.DB_SERVER)
+        def DATABASE_URI(self):  # Note: all caps
+            return f"mysql://user@{self.DB_SERVER}/foo"
 
     class ProductionConfig(Config):
         """Uses production database server."""
@@ -582,11 +671,9 @@ your configuration classes::
 
     class DevelopmentConfig(Config):
         DB_SERVER = 'localhost'
-        DEBUG = True
 
     class TestingConfig(Config):
         DB_SERVER = 'localhost'
-        DEBUG = True
         DATABASE_URI = 'sqlite:///:memory:'
 
 There are many different ways and it's up to you how you want to manage
@@ -605,7 +692,7 @@ your configuration files.  However here a list of good recommendations:
 -   Use a tool like `fabric`_ in production to push code and
     configurations separately to the production server(s).  For some
     details about how to do that, head over to the
-    :ref:`fabric-deployment` pattern.
+    :doc:`/patterns/fabric` pattern.
 
 .. _fabric: https://www.fabfile.org/
 
@@ -655,7 +742,7 @@ locations are used:
 
 -   Installed module or package::
 
-        $PREFIX/lib/python2.X/site-packages/myapp
+        $PREFIX/lib/pythonX.Y/site-packages/myapp
         $PREFIX/var/myapp-instance
 
     ``$PREFIX`` is the prefix of your Python installation.  This can be

@@ -15,14 +15,12 @@ This is a basic view function that generates a lot of CSV data on the fly.
 The trick is to have an inner function that uses a generator to generate
 data and to then invoke that function and pass it to a response object::
 
-    from flask import Response
-
     @app.route('/large.csv')
     def generate_large_csv():
         def generate():
             for row in iter_all_rows():
-                yield ','.join(row) + '\n'
-        return Response(generate(), mimetype='text/csv')
+                yield f"{','.join(row)}\n"
+        return generate(), {"Content-Type": "text/csv")
 
 Each ``yield`` expression is directly sent to the browser.  Note though
 that some WSGI middlewares might break streaming, so be careful there in
@@ -31,54 +29,57 @@ debug environments with profilers and other things you might have enabled.
 Streaming from Templates
 ------------------------
 
-The Jinja2 template engine also supports rendering templates piece by
-piece.  This functionality is not directly exposed by Flask because it is
-quite uncommon, but you can easily do it yourself::
+The Jinja2 template engine supports rendering a template piece by
+piece, returning an iterator of strings. Flask provides the
+:func:`~flask.stream_template` and :func:`~flask.stream_template_string`
+functions to make this easier to use.
 
-    from flask import Response
+.. code-block:: python
 
-    def stream_template(template_name, **context):
-        app.update_template_context(context)
-        t = app.jinja_env.get_template(template_name)
-        rv = t.stream(context)
-        rv.enable_buffering(5)
-        return rv
+    from flask import stream_template
 
-    @app.route('/my-large-page.html')
-    def render_large_template():
-        rows = iter_all_rows()
-        return Response(stream_template('the_template.html', rows=rows))
+    @app.get("/timeline")
+    def timeline():
+        return stream_template("timeline.html")
 
-The trick here is to get the template object from the Jinja2 environment
-on the application and to call :meth:`~jinja2.Template.stream` instead of
-:meth:`~jinja2.Template.render` which returns a stream object instead of a
-string.  Since we're bypassing the Flask template render functions and
-using the template object itself we have to make sure to update the render
-context ourselves by calling :meth:`~flask.Flask.update_template_context`.
-The template is then evaluated as the stream is iterated over.  Since each
-time you do a yield the server will flush the content to the client you
-might want to buffer up a few items in the template which you can do with
-``rv.enable_buffering(size)``.  ``5`` is a sane default.
+The parts yielded by the render stream tend to match statement blocks in
+the template.
+
 
 Streaming with Context
 ----------------------
 
-.. versionadded:: 0.9
+The :data:`~flask.request` will not be active while the generator is
+running, because the view has already returned at that point. If you try
+to access ``request``, you'll get a ``RuntimeError``.
 
-Note that when you stream data, the request context is already gone the
-moment the function executes.  Flask 0.9 provides you with a helper that
-can keep the request context around during the execution of the
-generator::
+If your generator function relies on data in ``request``, use the
+:func:`~flask.stream_with_context` wrapper. This will keep the request
+context active during the generator.
 
-    from flask import stream_with_context, request, Response
+.. code-block:: python
+
+    from flask import stream_with_context, request
+    from markupsafe import escape
 
     @app.route('/stream')
     def streamed_response():
         def generate():
-            yield 'Hello '
-            yield request.args['name']
-            yield '!'
-        return Response(stream_with_context(generate()))
+            yield '<p>Hello '
+            yield escape(request.args['name'])
+            yield '!</p>'
+        return stream_with_context(generate())
 
-Without the :func:`~flask.stream_with_context` function you would get a
-:class:`RuntimeError` at that point.
+It can also be used as a decorator.
+
+.. code-block:: python
+
+    @stream_with_context
+    def generate():
+        ...
+
+    return generate()
+
+The :func:`~flask.stream_template` and
+:func:`~flask.stream_template_string` functions automatically
+use :func:`~flask.stream_with_context` if a request is active.

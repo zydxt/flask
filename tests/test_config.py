@@ -1,19 +1,11 @@
-# -*- coding: utf-8 -*-
-"""
-    tests.test_config
-    ~~~~~~~~~~~~~~~~~
-
-    :copyright: © 2010 by the Pallets team.
-    :license: BSD, see LICENSE for more details.
-"""
-
-from datetime import timedelta
+import json
 import os
 import textwrap
+from datetime import timedelta
+
+import pytest
 
 import flask
-from flask._compat import PY2
-import pytest
 
 
 # config keys used for the TestConfig
@@ -27,9 +19,9 @@ def common_object_test(app):
     assert "TestConfig" not in app.config
 
 
-def test_config_from_file():
+def test_config_from_pyfile():
     app = flask.Flask(__name__)
-    app.config.from_pyfile(__file__.rsplit(".", 1)[0] + ".py")
+    app.config.from_pyfile(f"{__file__.rsplit('.', 1)[0]}.py")
     common_object_test(app)
 
 
@@ -39,11 +31,73 @@ def test_config_from_object():
     common_object_test(app)
 
 
-def test_config_from_json():
+def test_config_from_file():
     app = flask.Flask(__name__)
     current_dir = os.path.dirname(os.path.abspath(__file__))
-    app.config.from_json(os.path.join(current_dir, "static", "config.json"))
+    app.config.from_file(os.path.join(current_dir, "static", "config.json"), json.load)
     common_object_test(app)
+
+
+def test_from_prefixed_env(monkeypatch):
+    monkeypatch.setenv("FLASK_STRING", "value")
+    monkeypatch.setenv("FLASK_BOOL", "true")
+    monkeypatch.setenv("FLASK_INT", "1")
+    monkeypatch.setenv("FLASK_FLOAT", "1.2")
+    monkeypatch.setenv("FLASK_LIST", "[1, 2]")
+    monkeypatch.setenv("FLASK_DICT", '{"k": "v"}')
+    monkeypatch.setenv("NOT_FLASK_OTHER", "other")
+
+    app = flask.Flask(__name__)
+    app.config.from_prefixed_env()
+
+    assert app.config["STRING"] == "value"
+    assert app.config["BOOL"] is True
+    assert app.config["INT"] == 1
+    assert app.config["FLOAT"] == 1.2
+    assert app.config["LIST"] == [1, 2]
+    assert app.config["DICT"] == {"k": "v"}
+    assert "OTHER" not in app.config
+
+
+def test_from_prefixed_env_custom_prefix(monkeypatch):
+    monkeypatch.setenv("FLASK_A", "a")
+    monkeypatch.setenv("NOT_FLASK_A", "b")
+
+    app = flask.Flask(__name__)
+    app.config.from_prefixed_env("NOT_FLASK")
+
+    assert app.config["A"] == "b"
+
+
+def test_from_prefixed_env_nested(monkeypatch):
+    monkeypatch.setenv("FLASK_EXIST__ok", "other")
+    monkeypatch.setenv("FLASK_EXIST__inner__ik", "2")
+    monkeypatch.setenv("FLASK_EXIST__new__more", '{"k": false}')
+    monkeypatch.setenv("FLASK_NEW__K", "v")
+
+    app = flask.Flask(__name__)
+    app.config["EXIST"] = {"ok": "value", "flag": True, "inner": {"ik": 1}}
+    app.config.from_prefixed_env()
+
+    if os.name != "nt":
+        assert app.config["EXIST"] == {
+            "ok": "other",
+            "flag": True,
+            "inner": {"ik": 2},
+            "new": {"more": {"k": False}},
+        }
+    else:
+        # Windows env var keys are always uppercase.
+        assert app.config["EXIST"] == {
+            "ok": "value",
+            "OK": "other",
+            "flag": True,
+            "inner": {"ik": 1},
+            "INNER": {"IK": 2},
+            "NEW": {"MORE": {"k": False}},
+        }
+
+    assert app.config["NEW"] == {"K": "v"}
 
 
 def test_config_from_mapping():
@@ -60,12 +114,16 @@ def test_config_from_mapping():
     common_object_test(app)
 
     app = flask.Flask(__name__)
+    app.config.from_mapping(SECRET_KEY="config", TEST_KEY="foo", skip_key="skip")
+    common_object_test(app)
+
+    app = flask.Flask(__name__)
     with pytest.raises(TypeError):
         app.config.from_mapping({}, {})
 
 
 def test_config_from_class():
-    class Base(object):
+    class Base:
         TEST_KEY = "foo"
 
     class Test(Base):
@@ -76,39 +134,34 @@ def test_config_from_class():
     common_object_test(app)
 
 
-def test_config_from_envvar():
-    env = os.environ
-    try:
-        os.environ = {}
-        app = flask.Flask(__name__)
-        with pytest.raises(RuntimeError) as e:
-            app.config.from_envvar("FOO_SETTINGS")
-        assert "'FOO_SETTINGS' is not set" in str(e.value)
-        assert not app.config.from_envvar("FOO_SETTINGS", silent=True)
+def test_config_from_envvar(monkeypatch):
+    monkeypatch.setattr("os.environ", {})
+    app = flask.Flask(__name__)
 
-        os.environ = {"FOO_SETTINGS": __file__.rsplit(".", 1)[0] + ".py"}
-        assert app.config.from_envvar("FOO_SETTINGS")
-        common_object_test(app)
-    finally:
-        os.environ = env
+    with pytest.raises(RuntimeError) as e:
+        app.config.from_envvar("FOO_SETTINGS")
+
+    assert "'FOO_SETTINGS' is not set" in str(e.value)
+    assert not app.config.from_envvar("FOO_SETTINGS", silent=True)
+
+    monkeypatch.setattr(
+        "os.environ", {"FOO_SETTINGS": f"{__file__.rsplit('.', 1)[0]}.py"}
+    )
+    assert app.config.from_envvar("FOO_SETTINGS")
+    common_object_test(app)
 
 
-def test_config_from_envvar_missing():
-    env = os.environ
-    try:
-        os.environ = {"FOO_SETTINGS": "missing.cfg"}
-        with pytest.raises(IOError) as e:
-            app = flask.Flask(__name__)
-            app.config.from_envvar("FOO_SETTINGS")
-        msg = str(e.value)
-        assert msg.startswith(
-            "[Errno 2] Unable to load configuration "
-            "file (No such file or directory):"
-        )
-        assert msg.endswith("missing.cfg'")
-        assert not app.config.from_envvar("FOO_SETTINGS", silent=True)
-    finally:
-        os.environ = env
+def test_config_from_envvar_missing(monkeypatch):
+    monkeypatch.setattr("os.environ", {"FOO_SETTINGS": "missing.cfg"})
+    app = flask.Flask(__name__)
+    with pytest.raises(IOError) as e:
+        app.config.from_envvar("FOO_SETTINGS")
+    msg = str(e.value)
+    assert msg.startswith(
+        "[Errno 2] Unable to load configuration file (No such file or directory):"
+    )
+    assert msg.endswith("missing.cfg'")
+    assert not app.config.from_envvar("FOO_SETTINGS", silent=True)
 
 
 def test_config_missing():
@@ -117,22 +170,22 @@ def test_config_missing():
         app.config.from_pyfile("missing.cfg")
     msg = str(e.value)
     assert msg.startswith(
-        "[Errno 2] Unable to load configuration " "file (No such file or directory):"
+        "[Errno 2] Unable to load configuration file (No such file or directory):"
     )
     assert msg.endswith("missing.cfg'")
     assert not app.config.from_pyfile("missing.cfg", silent=True)
 
 
-def test_config_missing_json():
+def test_config_missing_file():
     app = flask.Flask(__name__)
     with pytest.raises(IOError) as e:
-        app.config.from_json("missing.json")
+        app.config.from_file("missing.json", load=json.load)
     msg = str(e.value)
     assert msg.startswith(
-        "[Errno 2] Unable to load configuration " "file (No such file or directory):"
+        "[Errno 2] Unable to load configuration file (No such file or directory):"
     )
     assert msg.endswith("missing.json'")
-    assert not app.config.from_json("missing.json", silent=True)
+    assert not app.config.from_file("missing.json", load=json.load, silent=True)
 
 
 def test_custom_config_class():
@@ -193,17 +246,13 @@ def test_from_pyfile_weird_encoding(tmpdir, encoding):
     f = tmpdir.join("my_config.py")
     f.write_binary(
         textwrap.dedent(
-            u"""
-    # -*- coding: {0} -*-
-    TEST_VALUE = "föö"
-    """.format(
-                encoding
-            )
+            f"""
+            # -*- coding: {encoding} -*-
+            TEST_VALUE = "föö"
+            """
         ).encode(encoding)
     )
     app = flask.Flask(__name__)
     app.config.from_pyfile(str(f))
     value = app.config["TEST_VALUE"]
-    if PY2:
-        value = value.decode(encoding)
-    assert value == u"föö"
+    assert value == "föö"

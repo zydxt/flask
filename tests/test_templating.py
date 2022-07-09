@@ -1,20 +1,10 @@
-# -*- coding: utf-8 -*-
-"""
-    tests.templating
-    ~~~~~~~~~~~~~~~~
-
-    Template functionality
-
-    :copyright: © 2010 by the Pallets team.
-    :license: BSD, see LICENSE for more details.
-"""
+import logging
 
 import pytest
+import werkzeug.serving
+from jinja2 import TemplateNotFound
 
 import flask
-import logging
-from jinja2 import TemplateNotFound
-import werkzeug.serving
 
 
 def test_context_processing(app, client):
@@ -39,6 +29,15 @@ def test_original_win(app, client):
     assert rv.data == b"42"
 
 
+def test_simple_stream(app, client):
+    @app.route("/")
+    def index():
+        return flask.stream_template_string("{{ config }}", config=42)
+
+    rv = client.get("/")
+    assert rv.data == b"42"
+
+
 def test_request_less_rendering(app, app_ctx):
     app.config["WORLD_NAME"] = "Special World"
 
@@ -46,7 +45,7 @@ def test_request_less_rendering(app, app_ctx):
     def context_processor():
         return dict(foo=42)
 
-    rv = flask.render_template_string("Hello {{ config.WORLD_NAME }} " "{{ foo }}")
+    rv = flask.render_template_string("Hello {{ config.WORLD_NAME }} {{ foo }}")
     assert rv == "Hello Special World 42"
 
 
@@ -398,12 +397,12 @@ def test_templates_auto_reload_debug_run(app, monkeypatch):
     monkeypatch.setattr(werkzeug.serving, "run_simple", run_simple_mock)
 
     app.run()
-    assert app.templates_auto_reload == False
-    assert app.jinja_env.auto_reload == False
+    assert not app.templates_auto_reload
+    assert not app.jinja_env.auto_reload
 
     app.run(debug=True)
-    assert app.templates_auto_reload == True
-    assert app.jinja_env.auto_reload == True
+    assert app.templates_auto_reload
+    assert app.jinja_env.auto_reload
 
 
 def test_template_loader_debugging(test_apps, monkeypatch):
@@ -412,25 +411,27 @@ def test_template_loader_debugging(test_apps, monkeypatch):
     called = []
 
     class _TestHandler(logging.Handler):
-        def handle(x, record):
+        def handle(self, record):
             called.append(True)
             text = str(record.msg)
-            assert '1: trying loader of application "blueprintapp"' in text
+            assert "1: trying loader of application 'blueprintapp'" in text
             assert (
-                '2: trying loader of blueprint "admin" ' "(blueprintapp.apps.admin)"
+                "2: trying loader of blueprint 'admin' (blueprintapp.apps.admin)"
             ) in text
             assert (
-                'trying loader of blueprint "frontend" ' "(blueprintapp.apps.frontend)"
+                "trying loader of blueprint 'frontend' (blueprintapp.apps.frontend)"
             ) in text
             assert "Error: the template could not be found" in text
             assert (
-                "looked up from an endpoint that belongs to " 'the blueprint "frontend"'
+                "looked up from an endpoint that belongs to the blueprint 'frontend'"
             ) in text
-            assert "See http://flask.pocoo.org/docs/blueprints/#templates" in text
+            assert "See https://flask.palletsprojects.com/blueprints/#templates" in text
 
     with app.test_client() as c:
         monkeypatch.setitem(app.config, "EXPLAIN_TEMPLATE_LOADING", True)
-        monkeypatch.setattr(logging.getLogger("flask"), "handlers", [_TestHandler()])
+        monkeypatch.setattr(
+            logging.getLogger("blueprintapp"), "handlers", [_TestHandler()]
+        )
 
         with pytest.raises(TemplateNotFound) as excinfo:
             c.get("/missing")

@@ -1,13 +1,9 @@
-# -*- coding: utf-8 -*-
-"""
-tests.test_user_error_handler
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+import pytest
+from werkzeug.exceptions import Forbidden
+from werkzeug.exceptions import HTTPException
+from werkzeug.exceptions import InternalServerError
+from werkzeug.exceptions import NotFound
 
-:copyright: © 2010 by the Pallets team.
-:license: BSD, see LICENSE for more details.
-"""
-
-from werkzeug.exceptions import Forbidden, InternalServerError, HTTPException, NotFound
 import flask
 
 
@@ -20,9 +16,29 @@ def test_error_handler_no_match(app, client):
         assert isinstance(e, CustomException)
         return "custom"
 
+    with pytest.raises(TypeError) as exc_info:
+        app.register_error_handler(CustomException(), None)
+
+    assert "CustomException() is an instance, not a class." in str(exc_info.value)
+
+    with pytest.raises(ValueError) as exc_info:
+        app.register_error_handler(list, None)
+
+    assert "'list' is not a subclass of Exception." in str(exc_info.value)
+
     @app.errorhandler(500)
     def handle_500(e):
-        return type(e).__name__
+        assert isinstance(e, InternalServerError)
+
+        if e.original_exception is not None:
+            return f"wrapped {type(e.original_exception).__name__}"
+
+        return "direct"
+
+    with pytest.raises(ValueError) as exc_info:
+        app.register_error_handler(999, None)
+
+    assert "Use a subclass of HTTPException" in str(exc_info.value)
 
     @app.route("/custom")
     def custom_test():
@@ -32,9 +48,14 @@ def test_error_handler_no_match(app, client):
     def key_error():
         raise KeyError()
 
+    @app.route("/abort")
+    def do_abort():
+        flask.abort(500)
+
     app.testing = False
     assert client.get("/custom").data == b"custom"
-    assert client.get("/keyerror").data == b"KeyError"
+    assert client.get("/keyerror").data == b"wrapped KeyError"
+    assert client.get("/abort").data == b"direct"
 
 
 def test_error_handler_subclass(app):
@@ -149,7 +170,7 @@ def test_default_error_handler():
         return "bp-default"
 
     @bp.errorhandler(Forbidden)
-    def bp_exception_handler(e):
+    def bp_forbidden_handler(e):
         assert isinstance(e, Forbidden)
         return "bp-forbidden"
 
@@ -164,13 +185,13 @@ def test_default_error_handler():
     app = flask.Flask(__name__)
 
     @app.errorhandler(HTTPException)
-    def catchall_errorhandler(e):
+    def catchall_exception_handler(e):
         assert isinstance(e, HTTPException)
         assert isinstance(e, NotFound)
         return "default"
 
     @app.errorhandler(Forbidden)
-    def catchall_errorhandler(e):
+    def catchall_forbidden_handler(e):
         assert isinstance(e, Forbidden)
         return "forbidden"
 
@@ -191,3 +212,84 @@ def test_default_error_handler():
     assert c.get("/forbidden").data == b"forbidden"
     # Don't handle RequestRedirect raised when adding slash.
     assert c.get("/slash", follow_redirects=True).data == b"slash"
+
+
+class TestGenericHandlers:
+    """Test how very generic handlers are dispatched to."""
+
+    class Custom(Exception):
+        pass
+
+    @pytest.fixture()
+    def app(self, app):
+        @app.route("/custom")
+        def do_custom():
+            raise self.Custom()
+
+        @app.route("/error")
+        def do_error():
+            raise KeyError()
+
+        @app.route("/abort")
+        def do_abort():
+            flask.abort(500)
+
+        @app.route("/raise")
+        def do_raise():
+            raise InternalServerError()
+
+        app.config["PROPAGATE_EXCEPTIONS"] = False
+        return app
+
+    def report_error(self, e):
+        original = getattr(e, "original_exception", None)
+
+        if original is not None:
+            return f"wrapped {type(original).__name__}"
+
+        return f"direct {type(e).__name__}"
+
+    @pytest.mark.parametrize("to_handle", (InternalServerError, 500))
+    def test_handle_class_or_code(self, app, client, to_handle):
+        """``InternalServerError`` and ``500`` are aliases, they should
+        have the same behavior. Both should only receive
+        ``InternalServerError``, which might wrap another error.
+        """
+
+        @app.errorhandler(to_handle)
+        def handle_500(e):
+            assert isinstance(e, InternalServerError)
+            return self.report_error(e)
+
+        assert client.get("/custom").data == b"wrapped Custom"
+        assert client.get("/error").data == b"wrapped KeyError"
+        assert client.get("/abort").data == b"direct InternalServerError"
+        assert client.get("/raise").data == b"direct InternalServerError"
+
+    def test_handle_generic_http(self, app, client):
+        """``HTTPException`` should only receive ``HTTPException``
+        subclasses. It will receive ``404`` routing exceptions.
+        """
+
+        @app.errorhandler(HTTPException)
+        def handle_http(e):
+            assert isinstance(e, HTTPException)
+            return str(e.code)
+
+        assert client.get("/error").data == b"500"
+        assert client.get("/abort").data == b"500"
+        assert client.get("/not-found").data == b"404"
+
+    def test_handle_generic(self, app, client):
+        """Generic ``Exception`` will handle all exceptions directly,
+        including ``HTTPExceptions``.
+        """
+
+        @app.errorhandler(Exception)
+        def handle_exception(e):
+            return self.report_error(e)
+
+        assert client.get("/custom").data == b"direct Custom"
+        assert client.get("/error").data == b"direct KeyError"
+        assert client.get("/abort").data == b"direct InternalServerError"
+        assert client.get("/not-found").data == b"direct NotFound"

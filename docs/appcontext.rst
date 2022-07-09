@@ -1,7 +1,5 @@
 .. currentmodule:: flask
 
-.. _app-context:
-
 The Application Context
 =======================
 
@@ -10,7 +8,7 @@ a request, CLI command, or other activity. Rather than passing the
 application around to each function, the :data:`current_app` and
 :data:`g` proxies are accessed instead.
 
-This is similar to the :doc:`/reqcontext`, which keeps track of
+This is similar to :doc:`/reqcontext`, which keeps track of
 request-level data during a request. A corresponding application context
 is pushed when a request context is pushed.
 
@@ -119,7 +117,7 @@ For example, you can manage a database connection using this pattern::
         return g.db
 
     @app.teardown_appcontext
-    def teardown_db():
+    def teardown_db(exception):
         db = g.pop('db', None)
 
         if db is not None:
@@ -137,14 +135,6 @@ local from ``get_db()``::
 
 Accessing ``db`` will call ``get_db`` internally, in the same way that
 :data:`current_app` works.
-
-----
-
-If you're writing an extension, :data:`g` should be reserved for user
-code. You may store internal data on the context itself, but be sure to
-use a sufficiently unique name. The current context is accessed with
-:data:`_app_ctx_stack.top <_app_ctx_stack>`. For more information see
-:doc:`extensiondev`.
 
 
 Events and Signals

@@ -1,9 +1,7 @@
-.. _templates:
-
 Templates
 =========
 
-Flask leverages Jinja2 as template engine.  You are obviously free to use
+Flask leverages Jinja2 as its template engine.  You are obviously free to use
 a different template engine, but you still have to install Jinja2 to run
 Flask itself.  This requirement is necessary to enable rich extensions.
 An extension can depend on Jinja2 being present.
@@ -11,7 +9,7 @@ An extension can depend on Jinja2 being present.
 This section only gives a very quick introduction into how Jinja2
 is integrated into Flask.  If you want information on the template
 engine's syntax itself, head over to the official `Jinja2 Template
-Documentation <http://jinja.pocoo.org/docs/templates>`_ for
+Documentation <https://jinja.palletsprojects.com/templates/>`_ for
 more information.
 
 Jinja Setup
@@ -39,7 +37,7 @@ by default:
 .. data:: config
    :noindex:
 
-   The current configuration object (:data:`flask.config`)
+   The current configuration object (:data:`flask.Flask.config`)
 
    .. versionadded:: 0.6
 
@@ -97,37 +95,6 @@ by default:
 
       {% from '_helpers.html' import my_macro with context %}
 
-Standard Filters
-----------------
-
-These filters are available in Jinja2 additionally to the filters provided
-by Jinja2 itself:
-
-.. function:: tojson
-   :noindex:
-
-   This function converts the given object into JSON representation.  This
-   is for example very helpful if you try to generate JavaScript on the
-   fly.
-
-   .. sourcecode:: html+jinja
-
-       <script type=text/javascript>
-           doSomethingWith({{ user.username|tojson }});
-       </script>
-
-   It is also safe to use the output of `|tojson` in a *single-quoted* HTML
-   attribute:
-
-   .. sourcecode:: html+jinja
-
-       <button onclick='doSomethingWith({{ user.username|tojson }})'>
-           Click me
-       </button>
-
-   Note that in versions of Flask prior to 0.10, if using the output of
-   ``|tojson`` inside ``script``, make sure to disable escaping with ``|safe``.
-   In Flask 0.10 and above, this happens automatically.
 
 Controlling Autoescaping
 ------------------------
@@ -139,7 +106,7 @@ carry specific meanings in documents on their own you have to replace them
 by so called "entities" if you want to use them for text.  Not doing so
 would not only cause user frustration by the inability to use these
 characters in text, but can also lead to security problems.  (see
-:ref:`xss`)
+:ref:`security-xss`)
 
 Sometimes however you will need to disable autoescaping in templates.
 This can be the case if you want to explicitly inject HTML into pages, for
@@ -222,8 +189,8 @@ functions)::
 
     @app.context_processor
     def utility_processor():
-        def format_price(amount, currency=u'€'):
-            return u'{0:.2f}{1}'.format(amount, currency)
+        def format_price(amount, currency="€"):
+            return f"{amount:.2f}{currency}"
         return dict(format_price=format_price)
 
 The context processor above makes the `format_price` function available to all
@@ -234,3 +201,29 @@ templates::
 You could also build `format_price` as a template filter (see
 :ref:`registering-filters`), but this demonstrates how to pass functions in a
 context processor.
+
+Streaming
+---------
+
+It can be useful to not render the whole template as one complete
+string, instead render it as a stream, yielding smaller incremental
+strings. This can be used for streaming HTML in chunks to speed up
+initial page load, or to save memory when rendering a very large
+template.
+
+The Jinja2 template engine supports rendering a template piece
+by piece, returning an iterator of strings. Flask provides the
+:func:`~flask.stream_template` and :func:`~flask.stream_template_string`
+functions to make this easier to use.
+
+.. code-block:: python
+
+    from flask import stream_template
+
+    @app.get("/timeline")
+    def timeline():
+        return stream_template("timeline.html")
+
+These functions automatically apply the
+:func:`~flask.stream_with_context` wrapper if a request is active, so
+that it remains available in the template.

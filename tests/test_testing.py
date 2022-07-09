@@ -1,24 +1,14 @@
-# -*- coding: utf-8 -*-
-"""
-    tests.testing
-    ~~~~~~~~~~~~~
-
-    Test client and more.
-
-    :copyright: © 2010 by the Pallets team.
-    :license: BSD, see LICENSE for more details.
-"""
 import click
 import pytest
-
-import flask
 import werkzeug
 
+import flask
 from flask import appcontext_popped
-from flask._compat import text_type
 from flask.cli import ScriptInfo
+from flask.globals import _cv_req
 from flask.json import jsonify
-from flask.testing import make_test_environ_builder, FlaskCliRunner
+from flask.testing import EnvironBuilder
+from flask.testing import FlaskCliRunner
 
 try:
     import blinker
@@ -61,7 +51,7 @@ def test_environ_base_default(app, client, app_ctx):
 
     rv = client.get("/")
     assert rv.data == b"127.0.0.1"
-    assert flask.g.user_agent == "werkzeug/" + werkzeug.__version__
+    assert flask.g.user_agent == f"werkzeug/{werkzeug.__version__}"
 
 
 def test_environ_base_modified(app, client, app_ctx):
@@ -88,7 +78,7 @@ def test_client_open_environ(app, client, request):
     def index():
         return flask.request.remote_addr
 
-    builder = make_test_environ_builder(app, path="/index", method="GET")
+    builder = EnvironBuilder(app, path="/index", method="GET")
     request.addfinalizer(builder.close)
 
     rv = client.open(builder)
@@ -113,11 +103,18 @@ def test_specify_url_scheme(app, client):
 
 
 def test_path_is_url(app):
-    eb = make_test_environ_builder(app, "https://example.com/")
+    eb = EnvironBuilder(app, "https://example.com/")
     assert eb.url_scheme == "https"
     assert eb.host == "example.com"
     assert eb.script_root == ""
     assert eb.path == "/"
+
+
+def test_environbuilder_json_dumps(app):
+    """EnvironBuilder.json_dumps() takes settings from the app."""
+    app.config["JSON_AS_ASCII"] = False
+    eb = EnvironBuilder(app, json="\u20ac")
+    assert eb.input_stream.read().decode("utf8") == '"\u20ac"'
 
 
 def test_blueprint_with_subdomain():
@@ -136,7 +133,9 @@ def test_blueprint_with_subdomain():
 
     ctx = app.test_request_context("/", subdomain="xxx")
     assert ctx.request.url == "http://xxx.example.com:1234/foo/"
-    assert ctx.request.blueprint == bp.name
+
+    with ctx:
+        assert ctx.request.blueprint == bp.name
 
     rv = client.get("/", subdomain="xxx")
     assert rv.data == b"http://xxx.example.com:1234/foo/"
@@ -161,12 +160,10 @@ def test_redirect_keep_session(app, client, app_ctx):
         rv = client.get("/")
         assert rv.data == b"index"
         assert flask.session.get("data") == "foo"
+
         rv = client.post("/", data={}, follow_redirects=True)
         assert rv.data == b"foo"
-
-        # This support requires a new Werkzeug version
-        if not hasattr(client, "redirect_client"):
-            assert flask.session.get("data") == "foo"
+        assert flask.session.get("data") == "foo"
 
         rv = client.get("/getsession")
         assert rv.data == b"foo"
@@ -175,7 +172,7 @@ def test_redirect_keep_session(app, client, app_ctx):
 def test_session_transactions(app, client):
     @app.route("/")
     def index():
-        return text_type(flask.session["foo"])
+        return str(flask.session["foo"])
 
     with client:
         with client.session_transaction() as sess:
@@ -191,17 +188,16 @@ def test_session_transactions(app, client):
 
 def test_session_transactions_no_null_sessions():
     app = flask.Flask(__name__)
-    app.testing = True
 
     with app.test_client() as c:
         with pytest.raises(RuntimeError) as e:
-            with c.session_transaction() as sess:
+            with c.session_transaction():
                 pass
         assert "Session backend did not open a session" in str(e.value)
 
 
 def test_session_transactions_keep_context(app, client, req_ctx):
-    rv = client.get("/")
+    client.get("/")
     req = flask.request._get_current_object()
     assert req is not None
     with client.session_transaction():
@@ -211,7 +207,7 @@ def test_session_transactions_keep_context(app, client, req_ctx):
 def test_session_transaction_needs_cookies(app):
     c = app.test_client(use_cookies=False)
     with pytest.raises(RuntimeError) as e:
-        with c.session_transaction() as s:
+        with c.session_transaction():
             pass
     assert "cookies" in str(e.value)
 
@@ -258,29 +254,6 @@ def test_reuse_client(client):
         assert client.get("/").status_code == 404
 
 
-def test_test_client_calls_teardown_handlers(app, client):
-    called = []
-
-    @app.teardown_request
-    def remember(error):
-        called.append(error)
-
-    with client:
-        assert called == []
-        client.get("/")
-        assert called == []
-    assert called == [None]
-
-    del called[:]
-    with client:
-        assert called == []
-        client.get("/")
-        assert called == []
-        client.get("/")
-        assert called == [None]
-    assert called == [None, None]
-
-
 def test_full_url_request(app, client):
     @app.route("/action", methods=["POST"])
     def action():
@@ -316,9 +289,9 @@ def test_json_request_and_response(app, client):
 def test_client_json_no_app_context(app, client):
     @app.route("/hello", methods=["POST"])
     def hello():
-        return "Hello, {}!".format(flask.request.json["name"])
+        return f"Hello, {flask.request.json['name']}!"
 
-    class Namespace(object):
+    class Namespace:
         count = 0
 
         def add(self, app):
@@ -396,7 +369,7 @@ def test_cli_invoke(app):
 
 
 def test_cli_custom_obj(app):
-    class NS(object):
+    class NS:
         called = False
 
     def create_app():
@@ -411,3 +384,20 @@ def test_cli_custom_obj(app):
     runner = app.test_cli_runner()
     runner.invoke(hello_command, obj=script_info)
     assert NS.called
+
+
+def test_client_pop_all_preserved(app, req_ctx, client):
+    @app.route("/")
+    def index():
+        # stream_with_context pushes a third context, preserved by response
+        return flask.stream_with_context("hello")
+
+    # req_ctx fixture pushed an initial context
+    with client:
+        # request pushes a second request context, preserved by client
+        rv = client.get("/")
+
+    # close the response, releasing the context held by stream_with_context
+    rv.close()
+    # only req_ctx fixture should still be pushed
+    assert _cv_req.get(None) is req_ctx

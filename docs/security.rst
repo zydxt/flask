@@ -5,7 +5,7 @@ Web applications usually face all kinds of security problems and it's very
 hard to get everything right.  Flask tries to solve a few of these things
 for you, but there are a couple more you have to take care of yourself.
 
-.. _xss:
+.. _security-xss:
 
 Cross-Site Scripting (XSS)
 --------------------------
@@ -101,7 +101,7 @@ compare the two tokens and ensure they are equal.
 Why does Flask not do that for you?  The ideal place for this to happen is
 the form validation framework, which does not exist in Flask.
 
-.. _json-security:
+.. _security-json:
 
 JSON Security
 -------------
@@ -172,18 +172,6 @@ invisibly to clicks on your page's elements. This is also known as
     response.headers['X-Frame-Options'] = 'SAMEORIGIN'
 
 - https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/X-Frame-Options
-
-X-XSS-Protection
-~~~~~~~~~~~~~~~~
-
-The browser will try to prevent reflected XSS attacks by not loading the page
-if the request contains something that looks like JavaScript and the response
-contains the same data. ::
-
-    response.headers['X-XSS-Protection'] = '1; mode=block'
-
-- https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/X-XSS-Protection
-
 
 .. _security-cookie:
 
@@ -258,3 +246,29 @@ certificate key to prevent MITM attacks.
    or upgrade your key incorrectly.
 
 - https://developer.mozilla.org/en-US/docs/Web/HTTP/Public_Key_Pinning
+
+
+Copy/Paste to Terminal
+----------------------
+
+Hidden characters such as the backspace character (``\b``, ``^H``) can
+cause text to render differently in HTML than how it is interpreted if
+`pasted into a terminal <https://security.stackexchange.com/q/39118>`__.
+
+For example, ``import y\bose\bm\bi\bt\be\b`` renders as
+``import yosemite`` in HTML, but the backspaces are applied when pasted
+into a terminal, and it becomes ``import os``.
+
+If you expect users to copy and paste untrusted code from your site,
+such as from comments posted by users on a technical blog, consider
+applying extra filtering, such as replacing all ``\b`` characters.
+
+.. code-block:: python
+
+    body = body.replace("\b", "")
+
+Most modern terminals will warn about and remove hidden characters when
+pasting, so this isn't strictly necessary. It's also possible to craft
+dangerous commands in other ways that aren't possible to filter.
+Depending on your site's use case, it may be good to show a warning
+about copying code in general.

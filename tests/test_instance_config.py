@@ -1,18 +1,8 @@
-# -*- coding: utf-8 -*-
-"""
-    tests.test_instance
-    ~~~~~~~~~~~~~~~~~~~
-
-    :copyright: © 2010 by the Pallets team.
-    :license: BSD, see LICENSE for more details.
-"""
-
-import os
 import sys
 
 import pytest
+
 import flask
-from flask._compat import PY2
 
 
 def test_explicit_instance_paths(modules_tmpdir):
@@ -22,17 +12,6 @@ def test_explicit_instance_paths(modules_tmpdir):
 
     app = flask.Flask(__name__, instance_path=str(modules_tmpdir))
     assert app.instance_path == str(modules_tmpdir)
-
-
-def test_main_module_paths(modules_tmpdir, purge_module):
-    app = modules_tmpdir.join("main_app.py")
-    app.write('import flask\n\napp = flask.Flask("__main__")')
-    purge_module("main_app")
-
-    from main_app import app
-
-    here = os.path.abspath(os.getcwd())
-    assert app.instance_path == os.path.join(here, "instance")
 
 
 def test_uninstalled_module_paths(modules_tmpdir, purge_module):
@@ -65,11 +44,30 @@ def test_uninstalled_package_paths(modules_tmpdir, purge_module):
     assert app.instance_path == str(modules_tmpdir.join("instance"))
 
 
+def test_uninstalled_namespace_paths(tmpdir, monkeypatch, purge_module):
+    def create_namespace(package):
+        project = tmpdir.join(f"project-{package}")
+        monkeypatch.syspath_prepend(str(project))
+        project.join("namespace").join(package).join("__init__.py").write(
+            "import flask\napp = flask.Flask(__name__)\n", ensure=True
+        )
+        return project
+
+    _ = create_namespace("package1")
+    project2 = create_namespace("package2")
+    purge_module("namespace.package2")
+    purge_module("namespace")
+
+    from namespace.package2 import app
+
+    assert app.instance_path == str(project2.join("instance"))
+
+
 def test_installed_module_paths(
     modules_tmpdir, modules_tmpdir_prefix, purge_module, site_packages, limit_loader
 ):
     site_packages.join("site_app.py").write(
-        "import flask\n" "app = flask.Flask(__name__)\n"
+        "import flask\napp = flask.Flask(__name__)\n"
     )
     purge_module("site_app")
 
@@ -125,19 +123,3 @@ def test_egg_installed_paths(install_egg, modules_tmpdir, modules_tmpdir_prefix)
     finally:
         if "site_egg" in sys.modules:
             del sys.modules["site_egg"]
-
-
-@pytest.mark.skipif(not PY2, reason="This only works under Python 2.")
-def test_meta_path_loader_without_is_package(request, modules_tmpdir):
-    app = modules_tmpdir.join("unimportable.py")
-    app.write("import flask\napp = flask.Flask(__name__)")
-
-    class Loader(object):
-        def find_module(self, name, path=None):
-            return self
-
-    sys.meta_path.append(Loader())
-    request.addfinalizer(sys.meta_path.pop)
-
-    with pytest.raises(AttributeError):
-        import unimportable
