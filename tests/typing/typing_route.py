@@ -29,13 +29,22 @@ def hello_json() -> Response:
 
 
 @app.route("/json/dict")
-def hello_json_dict() -> t.Dict[str, t.Any]:
+def hello_json_dict() -> dict[str, t.Any]:
     return {"response": "Hello, World!"}
 
 
 @app.route("/json/dict")
-def hello_json_list() -> t.List[t.Any]:
+def hello_json_list() -> list[t.Any]:
     return [{"message": "Hello"}, {"message": "World"}]
+
+
+class StatusJSON(t.TypedDict):
+    status: str
+
+
+@app.route("/typed-dict")
+def typed_dict() -> StatusJSON:
+    return {"status": "ok"}
 
 
 @app.route("/generator")

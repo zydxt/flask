@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import contextvars
 import sys
 import typing as t
@@ -8,11 +10,13 @@ from werkzeug.exceptions import HTTPException
 
 from . import typing as ft
 from .globals import _cv_app
-from .globals import _cv_req
+from .globals import _cv_request
 from .signals import appcontext_popped
 from .signals import appcontext_pushed
 
 if t.TYPE_CHECKING:  # pragma: no cover
+    from _typeshed.wsgi import WSGIEnvironment
+
     from .app import Flask
     from .sessions import SessionMixin
     from .wrappers import Request
@@ -60,7 +64,7 @@ class _AppCtxGlobals:
         except KeyError:
             raise AttributeError(name) from None
 
-    def get(self, name: str, default: t.Optional[t.Any] = None) -> t.Any:
+    def get(self, name: str, default: t.Any | None = None) -> t.Any:
         """Get an attribute by name, or a default value. Like
         :meth:`dict.get`.
 
@@ -110,7 +114,9 @@ class _AppCtxGlobals:
         return object.__repr__(self)
 
 
-def after_this_request(f: ft.AfterRequestCallable) -> ft.AfterRequestCallable:
+def after_this_request(
+    f: ft.AfterRequestCallable[t.Any],
+) -> ft.AfterRequestCallable[t.Any]:
     """Executes a function after this request.  This is useful to modify
     response objects.  The function is passed the response object and has
     to return the same or a new one.
@@ -131,7 +137,7 @@ def after_this_request(f: ft.AfterRequestCallable) -> ft.AfterRequestCallable:
 
     .. versionadded:: 0.9
     """
-    ctx = _cv_req.get(None)
+    ctx = _cv_request.get(None)
 
     if ctx is None:
         raise RuntimeError(
@@ -143,7 +149,10 @@ def after_this_request(f: ft.AfterRequestCallable) -> ft.AfterRequestCallable:
     return f
 
 
-def copy_current_request_context(f: t.Callable) -> t.Callable:
+F = t.TypeVar("F", bound=t.Callable[..., t.Any])
+
+
+def copy_current_request_context(f: F) -> F:
     """A helper function that decorates a function to retain the current
     request context.  This is useful when working with greenlets.  The moment
     the function is decorated a copy of the request context is created and
@@ -167,7 +176,7 @@ def copy_current_request_context(f: t.Callable) -> t.Callable:
 
     .. versionadded:: 0.10
     """
-    ctx = _cv_req.get(None)
+    ctx = _cv_request.get(None)
 
     if ctx is None:
         raise RuntimeError(
@@ -177,11 +186,11 @@ def copy_current_request_context(f: t.Callable) -> t.Callable:
 
     ctx = ctx.copy()
 
-    def wrapper(*args, **kwargs):
-        with ctx:
-            return ctx.app.ensure_sync(f)(*args, **kwargs)
+    def wrapper(*args: t.Any, **kwargs: t.Any) -> t.Any:
+        with ctx:  # type: ignore[union-attr]
+            return ctx.app.ensure_sync(f)(*args, **kwargs)  # type: ignore[union-attr]
 
-    return update_wrapper(wrapper, f)
+    return update_wrapper(wrapper, f)  # type: ignore[return-value]
 
 
 def has_request_context() -> bool:
@@ -213,7 +222,7 @@ def has_request_context() -> bool:
 
     .. versionadded:: 0.7
     """
-    return _cv_app.get(None) is not None
+    return _cv_request.get(None) is not None
 
 
 def has_app_context() -> bool:
@@ -223,7 +232,7 @@ def has_app_context() -> bool:
 
     .. versionadded:: 0.9
     """
-    return _cv_req.get(None) is not None
+    return _cv_app.get(None) is not None
 
 
 class AppContext:
@@ -233,18 +242,18 @@ class AppContext:
     running CLI commands.
     """
 
-    def __init__(self, app: "Flask") -> None:
+    def __init__(self, app: Flask) -> None:
         self.app = app
         self.url_adapter = app.create_url_adapter(None)
         self.g: _AppCtxGlobals = app.app_ctx_globals_class()
-        self._cv_tokens: t.List[contextvars.Token] = []
+        self._cv_tokens: list[contextvars.Token[AppContext]] = []
 
     def push(self) -> None:
         """Binds the app context to the current context."""
         self._cv_tokens.append(_cv_app.set(self))
-        appcontext_pushed.send(self.app)
+        appcontext_pushed.send(self.app, _async_wrapper=self.app.ensure_sync)
 
-    def pop(self, exc: t.Optional[BaseException] = _sentinel) -> None:  # type: ignore
+    def pop(self, exc: BaseException | None = _sentinel) -> None:  # type: ignore
         """Pops the app context."""
         try:
             if len(self._cv_tokens) == 1:
@@ -260,17 +269,17 @@ class AppContext:
                 f"Popped wrong app context. ({ctx!r} instead of {self!r})"
             )
 
-        appcontext_popped.send(self.app)
+        appcontext_popped.send(self.app, _async_wrapper=self.app.ensure_sync)
 
-    def __enter__(self) -> "AppContext":
+    def __enter__(self) -> AppContext:
         self.push()
         return self
 
     def __exit__(
         self,
-        exc_type: t.Optional[type],
-        exc_value: t.Optional[BaseException],
-        tb: t.Optional[TracebackType],
+        exc_type: type | None,
+        exc_value: BaseException | None,
+        tb: TracebackType | None,
     ) -> None:
         self.pop(exc_value)
 
@@ -299,30 +308,33 @@ class RequestContext:
 
     def __init__(
         self,
-        app: "Flask",
-        environ: dict,
-        request: t.Optional["Request"] = None,
-        session: t.Optional["SessionMixin"] = None,
+        app: Flask,
+        environ: WSGIEnvironment,
+        request: Request | None = None,
+        session: SessionMixin | None = None,
     ) -> None:
         self.app = app
         if request is None:
             request = app.request_class(environ)
+            request.json_module = app.json
         self.request: Request = request
         self.url_adapter = None
         try:
             self.url_adapter = app.create_url_adapter(self.request)
         except HTTPException as e:
             self.request.routing_exception = e
-        self.flashes: t.Optional[t.List[t.Tuple[str, str]]] = None
-        self.session: t.Optional["SessionMixin"] = session
+        self.flashes: list[tuple[str, str]] | None = None
+        self.session: SessionMixin | None = session
         # Functions that should be executed after the request on the response
         # object.  These will be called before the regular "after_request"
         # functions.
-        self._after_request_functions: t.List[ft.AfterRequestCallable] = []
+        self._after_request_functions: list[ft.AfterRequestCallable[t.Any]] = []
 
-        self._cv_tokens: t.List[t.Tuple[contextvars.Token, t.Optional[AppContext]]] = []
+        self._cv_tokens: list[
+            tuple[contextvars.Token[RequestContext], AppContext | None]
+        ] = []
 
-    def copy(self) -> "RequestContext":
+    def copy(self) -> RequestContext:
         """Creates a copy of this request context with the same request object.
         This can be used to move a request context to a different greenlet.
         Because the actual request object is the same this cannot be used to
@@ -363,7 +375,7 @@ class RequestContext:
         else:
             app_ctx = None
 
-        self._cv_tokens.append((_cv_req.set(self), app_ctx))
+        self._cv_tokens.append((_cv_request.set(self), app_ctx))
 
         # Open the session at the moment that the request context is available.
         # This allows a custom open_session method to use the request context.
@@ -381,7 +393,7 @@ class RequestContext:
         if self.url_adapter is not None:
             self.match_request()
 
-    def pop(self, exc: t.Optional[BaseException] = _sentinel) -> None:  # type: ignore
+    def pop(self, exc: BaseException | None = _sentinel) -> None:  # type: ignore
         """Pops the request context and unbinds it by doing that.  This will
         also trigger the execution of functions registered by the
         :meth:`~flask.Flask.teardown_request` decorator.
@@ -401,9 +413,9 @@ class RequestContext:
                 if request_close is not None:
                     request_close()
         finally:
-            ctx = _cv_req.get()
+            ctx = _cv_request.get()
             token, app_ctx = self._cv_tokens.pop()
-            _cv_req.reset(token)
+            _cv_request.reset(token)
 
             # get rid of circular dependencies at the end of the request
             # so that we don't require the GC to be active.
@@ -418,15 +430,15 @@ class RequestContext:
                     f"Popped wrong request context. ({ctx!r} instead of {self!r})"
                 )
 
-    def __enter__(self) -> "RequestContext":
+    def __enter__(self) -> RequestContext:
         self.push()
         return self
 
     def __exit__(
         self,
-        exc_type: t.Optional[type],
-        exc_value: t.Optional[BaseException],
-        tb: t.Optional[TracebackType],
+        exc_type: type | None,
+        exc_value: BaseException | None,
+        tb: TracebackType | None,
     ) -> None:
         self.pop(exc_value)
 
